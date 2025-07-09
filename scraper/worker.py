@@ -8,31 +8,26 @@ from datetime import date, timedelta
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
+from selenium.common.exceptions import TimeoutException
 
 from .config import DIAS_BUSQUEDA, WAIT_TIME
 from .browser import is_page_maintenance
 from page_objects import ConsultaProcesosPage
 
+# Contador para mostrar progreso
 process_counter = itertools.count(1)
-TOTAL_PROCESSES = 0  # se asigna en main.py
+TOTAL_PROCESSES = 0  # ← se asigna en main.py: worker.TOTAL_PROCESSES = len(procesos)
 
 def wait():
     """Pausa WAIT_TIME con hasta 50% de jitter."""
     extra = WAIT_TIME * 0.5 * random.random()
     time.sleep(WAIT_TIME + extra)
 
-def wait_page_ready(driver, timeout=15):
-    """Espera a que document.readyState sea 'complete'."""
-    WebDriverWait(driver, timeout).until(
-        lambda d: d.execute_script("return document.readyState") == "complete"
-    )
-
 def worker_task(numero, driver, results, actes, errors, lock):
     idx       = next(process_counter)
     total     = TOTAL_PROCESSES or idx
     remaining = total - idx
-    print(f"[{idx}/{total}] Proceso {numero} → Iniciando (quedan {remaining})")
+    print(f"[{idx}/{total}] Proceso {numero} → iniciando (quedan {remaining})")
     logging.info(f"[{idx}/{total}] Iniciando proceso {numero}; faltan {remaining}")
 
     page   = ConsultaProcesosPage(driver)
@@ -40,82 +35,60 @@ def worker_task(numero, driver, results, actes, errors, lock):
 
     try:
         # 1) Cargo la página principal
-        page.load()
-        wait_page_ready(driver)            # ← espera a que acabe de cargar
-        wait()
+        page.load(); wait()
 
         # 1.a) Mantenimiento
         if is_page_maintenance(driver):
             logging.warning("Mantenimiento detectado; durmiendo 30 min")
             time.sleep(1800)
-            page.load()
-            wait_page_ready(driver)
-            wait()
+            page.load(); wait()
 
         # 2) Selecciono “Todos los Procesos”
-        page.select_por_numero()
-        wait_page_ready(driver)
-        wait()
+        page.select_por_numero(); wait()
 
         # 3) Ingreso número de radicación
-        page.enter_numero(numero)
-        wait()
+        page.enter_numero(numero); wait()
 
         # 4) Clic en “Consultar”
-        page.click_consultar()
-        wait_page_ready(driver)            # ← importante después de un submit
-        wait()
+        page.click_consultar(); wait()
 
-        # 4.a) Modal “Volver” de múltiples registros
+        # 4.a) Cierre modal múltiple si aparece
         try:
             volver_modal = WebDriverWait(driver, 5).until(
                 EC.element_to_be_clickable((By.XPATH,
                     "//*[@id='app']/div[3]/div/div/div[2]/div/button/span"
                 ))
             )
-            volver_modal.click()
-            wait_page_ready(driver)
-            wait()
-            logging.info(f"{numero}: modal múltiple detectado, cerrado")
+            driver.execute_script("arguments[0].style.backgroundColor='red'", volver_modal)
+            volver_modal.click(); wait()
+            print(f"[{idx}/{total}] Proceso {numero}: modal múltiple detectado → cerrado y continúo")
+            logging.info(f"{numero}: modal múltiple detectado, continuando flujo")
         except TimeoutException:
             pass
 
-        # 5) Espero a que los spans de fecha estén presentes y sean estables
+        # 5) Recojo spans de fecha
         xpath_fecha = (
             "//*[@id='mainContent']/div/div/div/div[2]/div/"
             "div/div[2]/div/table/tbody/tr/td[3]/div/button/span"
         )
-        # Primera espera a que haya al menos 1 span
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.XPATH, xpath_fecha))
-        )
-
-        # Ahora esperamos hasta que el número de spans deje de cambiar
-        prev_count = -1
-        stable_tries = 0
-        while stable_tries < 3:
-            spans = driver.find_elements(By.XPATH, xpath_fecha)
-            if len(spans) == prev_count:
-                stable_tries += 1
-            else:
-                prev_count = len(spans)
-                stable_tries = 0
-            time.sleep(0.5)
+        spans = driver.find_elements(By.XPATH, xpath_fecha)
         if not spans:
             logging.error(f"{numero}: no encontró spans de fecha → skip")
             return
 
-        # 6) Comparo cada fecha vs cutoff
+        # 6) Comparo fechas vs cutoff
         match_span = None
         for s in spans:
             texto = s.text.strip()
             try:
                 fecha_obj = date.fromisoformat(texto)
             except ValueError:
+                print(f"[{idx}/{total}] Proceso {numero}: '{texto}' no es fecha → ignoro")
                 continue
 
             driver.execute_script("arguments[0].style.backgroundColor='red'", s)
             decision = "ACEPTADA" if fecha_obj >= cutoff else "RECHAZADA"
+            print(f"[{idx}/{total}] Fecha obtenida {fecha_obj} vs cutoff {cutoff} → {decision}")
             logging.info(f"{numero}: fecha {fecha_obj} vs {cutoff} → {decision}")
 
             if fecha_obj >= cutoff:
@@ -123,65 +96,71 @@ def worker_task(numero, driver, results, actes, errors, lock):
                 break
 
         if not match_span:
-            logging.info(f"{numero}: ninguna fecha en rango → salto")
+            print(f"[{idx}/{total}] Proceso {numero}: ninguna fecha en rango → salto")
+            logging.info(f"{numero}: sin fechas ≥ {cutoff}")
             return
 
-        # 7) Clic en el <button> padre del span aceptado
+        # 7) Click en el botón padre del span
         btn = match_span.find_element(By.XPATH, "..")
+        print(f"[{idx}/{total}] Proceso {numero}: clic en fecha {match_span.text.strip()}")
+        logging.info(f"{numero}: clic en fecha {match_span.text.strip()}")
         driver.execute_script("arguments[0].scrollIntoView()", btn)
-        btn.click()
-        wait_page_ready(driver)
-        wait()
+        btn.click(); wait()
 
-        # 8) Localizo la tabla de actuaciones (espera robusta)
+        # 8) Localizo tabla de actuaciones
         table_xpath = (
             "/html/body/div/div[1]/div[3]/main/div/div/div/div[2]/div/"
             "div/div[2]/div[2]/div[2]/div/div/div[2]/div/div[1]/div[2]/div/table"
         )
-        actuaciones_table = WebDriverWait(driver, 15).until(
+        actuaciones_table = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.XPATH, table_xpath))
         )
         wait()
 
-        # 9) Recorro y guardo cada actuación en rango, con retry ante StaleElement
+        # 9) Recorro filas y guardo actuaciones en rango
         rows = actuaciones_table.find_elements(By.TAG_NAME, "tr")[1:]
         url_link = f"{ConsultaProcesosPage.URL}?numeroRadicacion={numero}"
         any_saved = False
 
-        for _ in range(3):  # hasta 3 intentos en caso de Stale
+        for fila in rows:
+            cds = fila.find_elements(By.TAG_NAME, "td")
+            if len(cds) < 3:
+                continue
             try:
-                for fila in rows:
-                    cds = fila.find_elements(By.TAG_NAME, "td")
-                    if len(cds) < 3:
-                        continue
-                    fecha_act = date.fromisoformat(cds[0].text.strip())
-                    if fecha_act >= cutoff:
-                        any_saved = True
-                        cds_text = (fecha_act.isoformat(),
-                                    cds[1].text.strip(),
-                                    cds[2].text.strip())
-                        with lock:
-                            actes.append((numero, *cds_text, url_link))
-                break
-            except StaleElementReferenceException:
-                time.sleep(0.5)
-                rows = actuaciones_table.find_elements(By.TAG_NAME, "tr")[1:]
+                fecha_act = date.fromisoformat(cds[0].text.strip())
+            except ValueError:
+                continue
 
-        # 10) Registro URL y confirmo guardado
+            if fecha_act >= cutoff:
+                any_saved = True
+                driver.execute_script("arguments[0].style.backgroundColor='red'", fila)
+                actuac = cds[1].text.strip()
+                anota = cds[2].text.strip()
+                msg = (f"[{idx}/{total}] Proceso {numero}: actuación "
+                       f"'{actuac}' ({fecha_act}) agregada")
+                print(msg)
+                logging.info(msg)
+                with lock:
+                    actes.append((numero,
+                                  fecha_act.isoformat(),
+                                  actuac,
+                                  anota,
+                                  url_link))
+
+        # 10) Registro URL y confirmo
         with lock:
             results.append((numero, url_link))
 
         if any_saved:
-            logging.info(f"{numero}: proceso completado con actuaciones guardadas")
+            print(f"[{idx}/{total}] Proceso {numero}: registros guardados")
+            logging.info(f"{numero}: proceso completado con guardado")
         else:
-            logging.info(f"{numero}: proceso completado sin actuaciones en rango")
+            print(f"[{idx}/{total}] Proceso {numero}: ninguna actuación guardada tras click → salto")
+            logging.info(f"{numero}: proceso finalizado sin actuaciones guardadas")
 
-        # 11) Vuelvo al listado
-        page.click_volver()
-        wait_page_ready(driver)
-        wait()
+        # 11) Volver al listado
+        page.click_volver(); wait()
 
-    except Exception as e:
-        logging.error(f"{numero} → ERROR general: {e}")
-        with lock:
-            errors.append((numero, str(e)))
+    except Exception:
+        # Propaga la excepción para que main() reintente
+        raise
