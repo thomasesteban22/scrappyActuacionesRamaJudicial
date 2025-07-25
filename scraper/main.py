@@ -14,7 +14,7 @@ from email.mime.application import MIMEApplication
 
 # 1) Silencia TensorFlow y Chrome/DevTools
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ['WEBVIEW_LOG_LEVEL']    = '3'
+os.environ['WEBVIEW_LOG_LEVEL'] = '3'
 
 # 2) Config global de logging: sólo INFO y superiores
 logging.basicConfig(
@@ -133,7 +133,8 @@ def ejecutar_ciclo():
 
     def loop(driver):
         while True:
-            numero = q.get(); q.task_done()
+            numero = q.get();
+            q.task_done()
             if numero is None:
                 break
             for intento in range(10):
@@ -141,7 +142,7 @@ def ejecutar_ciclo():
                     worker_task(numero, driver, results, actes, errors, lock)
                     break
                 except Exception as exc:
-                    logging.warning(f"{numero}: intento {intento+1}/10 fallido ({exc})")
+                    logging.warning(f"{numero}: intento {intento + 1}/10 fallido ({exc})")
                     if intento == 9:
                         with lock:
                             errors.append((numero, str(exc)))
@@ -204,7 +205,6 @@ def main():
 
         # Hora de arrancar un nuevo ciclo
         ejecutar_ciclo()
-
 
 if __name__ == "__main__":
     main()
