@@ -206,5 +206,7 @@ def main():
         # Hora de arrancar un nuevo ciclo
         ejecutar_ciclo()
 
+
+
 if __name__ == "__main__":
     main()
