@@ -35,22 +35,27 @@ def worker_task(numero, driver, results, actes, errors, lock):
 
     try:
         # 1) Cargo la página principal
-        page.load(); wait()
+        page.load()
+        wait()
 
         # 1.a) Mantenimiento
         if is_page_maintenance(driver):
             logging.warning("Mantenimiento detectado; durmiendo 30 min")
             time.sleep(1800)
-            page.load(); wait()
+            page.load()
+            wait()
 
         # 2) Selecciono “Todos los Procesos”
-        page.select_por_numero(); wait()
+        page.select_por_numero()
+        wait()
 
         # 3) Ingreso número de radicación
-        page.enter_numero(numero); wait()
+        page.enter_numero(numero)
+        wait()
 
         # 4) Clic en “Consultar”
-        page.click_consultar(); wait()
+        page.click_consultar()
+        wait()
 
         # 4.a) Cierre modal múltiple si aparece
         try:
@@ -60,23 +65,24 @@ def worker_task(numero, driver, results, actes, errors, lock):
                 ))
             )
             driver.execute_script("arguments[0].style.backgroundColor='red'", volver_modal)
-            volver_modal.click(); wait()
+            volver_modal.click()
+            wait()
             print(f"[{idx}/{total}] Proceso {numero}: modal múltiple detectado → cerrado y continúo")
             logging.info(f"{numero}: modal múltiple detectado, continuando flujo")
         except TimeoutException:
             pass
 
-        # 5) Recojo spans de fecha
+        # 5) Espero a que carguen los spans de fecha en el DOM
         xpath_fecha = (
             "//*[@id='mainContent']/div/div/div/div[2]/div/"
             "div/div[2]/div/table/tbody/tr/td[3]/div/button/span"
         )
-        spans = driver.find_elements(By.XPATH, xpath_fecha)
-        if not spans:
-            logging.error(f"{numero}: no encontró spans de fecha → skip")
-            return
+        spans = WebDriverWait(driver, 20).until(
+            EC.presence_of_all_elements_located((By.XPATH, xpath_fecha))
+        )
+        wait()
 
-        # 6) Comparo fechas vs cutoff
+        # 6) Comparo cada fecha vs cutoff
         match_span = None
         for s in spans:
             texto = s.text.strip()
@@ -100,20 +106,25 @@ def worker_task(numero, driver, results, actes, errors, lock):
             logging.info(f"{numero}: sin fechas ≥ {cutoff}")
             return
 
-        # 7) Click en el botón padre del span
+        # 7) Click en el botón padre del span aceptado
         btn = match_span.find_element(By.XPATH, "..")
         print(f"[{idx}/{total}] Proceso {numero}: clic en fecha {match_span.text.strip()}")
         logging.info(f"{numero}: clic en fecha {match_span.text.strip()}")
         driver.execute_script("arguments[0].scrollIntoView()", btn)
-        btn.click(); wait()
+        btn.click()
+        wait()
 
-        # 8) Localizo tabla de actuaciones
+        # 8) Espero la tabla de actuaciones
         table_xpath = (
             "/html/body/div/div[1]/div[3]/main/div/div/div/div[2]/div/"
             "div/div[2]/div[2]/div[2]/div/div/div[2]/div/div[1]/div[2]/div/table"
         )
-        actuaciones_table = WebDriverWait(driver, 10).until(
+        actuaciones_table = WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.XPATH, table_xpath))
+        )
+        # espero al menos una fila de datos
+        WebDriverWait(driver, 10).until(
+            lambda d: len(actuaciones_table.find_elements(By.TAG_NAME, "tr")) > 1
         )
         wait()
 
@@ -147,7 +158,7 @@ def worker_task(numero, driver, results, actes, errors, lock):
                                   anota,
                                   url_link))
 
-        # 10) Registro URL y confirmo
+        # 10) Registro URL
         with lock:
             results.append((numero, url_link))
 
@@ -159,8 +170,12 @@ def worker_task(numero, driver, results, actes, errors, lock):
             logging.info(f"{numero}: proceso finalizado sin actuaciones guardadas")
 
         # 11) Volver al listado
-        page.click_volver(); wait()
+        page.click_volver()
+        wait()
 
-    except Exception:
-        # Propaga la excepción para que main() reintente
+    except TimeoutException as te:
+        logging.error(f"{numero}: TIMEOUT → {te}")
+        raise
+    except Exception as e:
+        logging.error(f"{numero}: ERROR general → {e}")
         raise

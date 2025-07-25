@@ -1,7 +1,7 @@
 # scraper/reporter.py
 
 import os
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from collections import defaultdict
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -10,7 +10,27 @@ from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 )
 
-from .config import PDF_PATH, LOG_TXT_PATH
+from .config import PDF_PATH, LOG_TXT_PATH, DIAS_BUSQUEDA
+
+# Nombres de los días de la semana en español
+DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+
+def format_datetime(dt: datetime) -> str:
+    """Devuelve 'DíaSemana, YYYY-MM-DD HH:MM:SS AM/PM'."""
+    dia = DIAS_SEMANA[dt.weekday()]
+    return f"{dia}, {dt.strftime('%Y-%m-%d %I:%M:%S %p')}"
+
+def format_duration(start_ts: float, end_ts: float) -> str:
+    """Formatea la duración de forma dinámica."""
+    total = int(end_ts - start_ts)
+    h = total // 3600
+    m = (total % 3600) // 60
+    s = total % 60
+    if h > 0:
+        return f"{h}h {m}min {s}s"
+    if m > 0:
+        return f"{m}min {s}s"
+    return f"{s}s"
 
 def generar_pdf(total_procesos, actes, errors, start_ts, end_ts):
     """
@@ -33,24 +53,30 @@ def generar_pdf(total_procesos, actes, errors, start_ts, end_ts):
 
     elements = []
 
-    # --- Encabezado y duración en min y seg
+    # --- Encabezado con día de la semana, formato AM/PM y duración dinámica
     start_dt = datetime.fromtimestamp(start_ts)
     end_dt   = datetime.fromtimestamp(end_ts)
-    dur = end_ts - start_ts
-    minutos = int(dur // 60)
-    segundos = int(dur % 60)
 
-    elements.append(Paragraph("Reporte Diario de Actuaciones", styles['Title']))
+    # Rango de búsqueda
+    cutoff_date = date.today() - timedelta(days=DIAS_BUSQUEDA)
+    rango_text = (
+        f"<b>RANGO DE BÚSQUEDA:</b> ÚLTIMOS {DIAS_BUSQUEDA} DÍAS "
+        f"({cutoff_date.isoformat()} al {date.today().isoformat()})"
+    )
+
+    elements.append(Paragraph("REPORTE DIARIO DE ACTUACIONES", styles['Title']))
     elements.append(Spacer(1, 12))
+    elements.append(Paragraph(rango_text, styles['Normal']))
+    elements.append(Spacer(1, 6))
     elements.append(Paragraph(
-        f"HORA INICIO: {start_dt.strftime('%Y-%m-%d %H:%M:%S')}<br/>"
-        f"HORA FIN: {end_dt.strftime('%Y-%m-%d %H:%M:%S')}<br/>"
-        f"DURACIÓN: {minutos}min {segundos}s",
+        f"<b>INICIO:</b> {format_datetime(start_dt)}<br/>"
+        f"<b>FIN:</b>   {format_datetime(end_dt)}<br/>"
+        f"<b>TIEMPO TRANSCURRIDO:</b> {format_duration(start_ts, end_ts)}",
         styles['Normal']
     ))
     elements.append(Spacer(1, 12))
 
-    # --- Conteos
+    # --- Conteos generales en negrita
     errores  = len(errors)
     escaneos = total_procesos - errores
 
@@ -63,18 +89,19 @@ def generar_pdf(total_procesos, actes, errors, start_ts, end_ts):
     sin_actos = escaneos - con_actos
 
     elements.append(Paragraph(
-        f"Total procesos: {total_procesos}<br/>"
-        f"Escaneados: {escaneos}<br/>"
-        f"Con actuaciones: {con_actos}<br/>"
-        f"Sin actuaciones: {sin_actos}<br/>"
-        f"Errores: {errores}",
+        f"<b>Total procesos:</b>       {total_procesos}<br/>"
+        f"<b>----------------------------------------------------------------------------------------------------------------------------</b><br/>"
+        f"<b>Escaneados:</b>           {escaneos}<br/>"
+        f"<b>Con errores:</b>          {errores}<br/>"
+        f"<b>Con actuaciones:</b>     {con_actos}<br/>"
+        f"<b>Sin actuaciones:</b>     {sin_actos}<br/>",
         styles['Normal']
     ))
     elements.append(Spacer(1, 12))
 
     # --- Detalle de actuaciones
     for num in sorted(por_proceso):
-        elements.append(Paragraph(f"Proceso {num}", styles['Heading3']))
+        elements.append(Paragraph(f"Num. Radicación {num}", styles['Heading3']))
         data = [["Fecha", "Actuación", "Anotación"]]
         for fecha, actu, anota in por_proceso[num]:
             data.append([
@@ -86,9 +113,9 @@ def generar_pdf(total_procesos, actes, errors, start_ts, end_ts):
         tbl = Table(data, colWidths=col_widths)
         tbl.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.lightblue),
-            ('LINEBELOW', (0,0), (-1,0), 1, colors.grey),
-            ('LINEBELOW', (0,1), (-1,-1), 0.5, colors.grey),
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('LINEBELOW',  (0,0), (-1,0), 1, colors.grey),
+            ('LINEBELOW',  (0,1), (-1,-1), 0.5, colors.grey),
+            ('VALIGN',     (0,0), (-1,-1), 'TOP'),
         ]))
         elements.append(tbl)
         elements.append(Spacer(1, 8))
@@ -104,9 +131,9 @@ def generar_pdf(total_procesos, actes, errors, start_ts, end_ts):
         tbl_e = Table(data_e, colWidths=col_widths)
         tbl_e.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.pink),
-            ('LINEBELOW', (0,0), (-1,0), 1, colors.grey),
-            ('LINEBELOW', (0,1), (-1,-1), 0.5, colors.grey),
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('LINEBELOW',  (0,0), (-1,0), 1, colors.grey),
+            ('LINEBELOW',  (0,1), (-1,-1), 0.5, colors.grey),
+            ('VALIGN',     (0,0), (-1,-1), 'TOP'),
         ]))
         elements.append(tbl_e)
     else:

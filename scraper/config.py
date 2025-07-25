@@ -14,3 +14,6 @@ NUM_THREADS    = int(os.getenv("NUM_THREADS", 1))
 
 OUTPUT_DIR     = os.path.dirname(PDF_PATH)
 LOG_TXT_PATH   = os.path.join(OUTPUT_DIR, "report.txt")
+
+# Hora programada para arrancar (HH:MM, 24 h), zona America/Bogota
+SCHEDULE_TIME = os.getenv("SCHEDULE_TIME", "01:00")
