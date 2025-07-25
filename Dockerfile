@@ -1,44 +1,32 @@
 # Dockerfile
 
-# 1) Imagen base ligera
+# 1) Base ligera
 FROM python:3.11-slim
 
-# 2) Variables de entorno para pip, logs y rutas de Chrome/Chromedriver
+# 2) Variables para pip y logs
 ENV PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1 \
+    # Rutas donde apt instalará Chromium y Chromedriver
     CHROME_BIN=/usr/bin/chromium \
-    CHROMEDRIVER_PATH=/usr/lib/chromium/chromedriver
+    CHROMEDRIVER_PATH=/usr/bin/chromedriver
 
-# 3) Directorio de trabajo
-WORKDIR /app
-
-# 4) Instalación de Chromium y dependencias del sistema
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      chromium \
-      chromium-driver \
-      ca-certificates \
-      fonts-liberation \
-      libgtk-3-0 \
-      libnss3 \
-      libxss1 \
-      libasound2 \
-      libx11-xcb1 \
-      libappindicator3-1 \
-      libatk-bridge2.0-0 \
-      libgbm1 \
-      libatk1.0-0 \
-      libdrm2 \
+# 3) Instala Chromium + Chromedriver y limpia cache de apt
+RUN apt-get update \
+    && apt-get install -y chromium chromium-driver \
     && rm -rf /var/lib/apt/lists/*
 
-# 5) Copiamos y instalamos requisitos Python
+# 4) Directorio de trabajo
+WORKDIR /app
+
+# 5) Copia e instala requirements
 COPY requirements.txt .
 RUN pip install --upgrade pip \
  && pip install -r requirements.txt
 
-# 6) Copiamos el resto del proyecto
+# 6) Copia el resto del proyecto
 COPY . .
 
-# 7) Creamos las carpetas necesarias
+# 7) Crea carpetas necesarias
 RUN mkdir -p data output tmp_profiles
 
 # 8) Punto de entrada
