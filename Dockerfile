@@ -1,32 +1,25 @@
-# 1. Base
-FROM python:3.10-slim
+# Dockerfile
 
-# 2. Variables de entorno
-ENV PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+# 1) Imagen base ligera
+FROM python:3.11-slim
 
-# 3. Directorio de trabajo
+# 2) Variables de entorno para pip y logs
+ENV PIP_NO_CACHE_DIR=1 \
+    PYTHONUNBUFFERED=1
+
+# 3) Directorio de trabajo
 WORKDIR /app
 
-# 4. Instala dependencias del proyecto
+# 4) Copiamos y instalamos requisitos
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install --upgrade pip \
+ && pip install -r requirements.txt
 
-# 5. Copia el resto de tu código
-#    - page_objects.py y selectors.json viven en la raíz
-#    - scraper/ es tu paquete principal
-#    - data/ contiene tus Excel de entrada
-#    - .env con la configuración
-COPY .env .
-COPY page_objects.py selectors.json ./
-COPY scraper/ ./scraper
-COPY data/ ./data
+# 5) Copiamos el resto del proyecto
+COPY . .
 
-# 6. Crea usuario no-root
-RUN addgroup --system appgroup \
- && adduser --system appuser --ingroup appgroup \
- && chown -R appuser:appgroup /app
-USER appuser
+# 6) Creamos carpetas para datos de entrada y salida
+RUN mkdir -p data output
 
-# 7. Punto de entrada
-CMD ["python", "-m", "scraper.main"]
+# 7) Punto de entrada
+ENTRYPOINT ["python", "-m", "scraper.main"]
