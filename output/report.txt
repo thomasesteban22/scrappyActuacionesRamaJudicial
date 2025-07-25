@@ -1,4 +1,25 @@
-Reporte generado: 2025-07-07 23:17:27.637669
-Total: 38, Escaneados: 38, Con actuaciones: 14, Sin actuaciones: 24, Errores: 0
+Reporte generado: 2025-07-24 14:30:11.731794
+Total: 1078, Escaneados: 1067, Con actuaciones: 45, Sin actuaciones: 1022, Errores: 11
 
-Cero errores.
+11001310301020099706880 → Message: 
+
+11001310301020200370176 → Message: 
+
+11001400307620170048100 → Message: 
+
+11001410308420170115100 → Message: 
+
+25307400300120220046800 → Message: 
+
+25312408900120220015300 → Message: 
+
+25386400300120220029900 → Message: 
+
+25402408900120210026200 → Message: 
+
+73001312100120210023800 → Message: 
+
+00000000000002019 - 658 → Message: 
+
+00110013110010202500074 → Message: 
+
