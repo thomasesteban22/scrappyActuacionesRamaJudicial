@@ -34,13 +34,13 @@ def worker_task(numero, driver, results, actes, errors, lock):
     cutoff = date.today() - timedelta(days=DIAS_BUSQUEDA)
 
     try:
-        # 1) Cargo la página principal
+        # 1) Cargo la página principal y espero DOM completo
         page.load()
         wait()
 
         # 1.a) Mantenimiento
         if is_page_maintenance(driver):
-            logging.warning("Mantenimiento detectado; durmiendo 30 min")
+            logging.warning(f"{numero}: Mantenimiento detectado; durmiendo 30 min")
             time.sleep(1800)
             page.load()
             wait()
@@ -82,7 +82,7 @@ def worker_task(numero, driver, results, actes, errors, lock):
         )
         wait()
 
-        # 6) Comparo cada fecha vs cutoff
+        # 6) Comparo cada fecha vs cutoff y busco la primera aceptada
         match_span = None
         for s in spans:
             texto = s.text.strip()
@@ -114,7 +114,7 @@ def worker_task(numero, driver, results, actes, errors, lock):
         btn.click()
         wait()
 
-        # 8) Espero la tabla de actuaciones
+        # 8) Espero la tabla de actuaciones y al menos una fila de datos
         table_xpath = (
             "/html/body/div/div[1]/div[3]/main/div/div/div/div[2]/div/"
             "div/div[2]/div[2]/div[2]/div/div/div[2]/div/div[1]/div[2]/div/table"
@@ -122,14 +122,13 @@ def worker_task(numero, driver, results, actes, errors, lock):
         actuaciones_table = WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.XPATH, table_xpath))
         )
-        # espero al menos una fila de datos
         WebDriverWait(driver, 10).until(
             lambda d: len(actuaciones_table.find_elements(By.TAG_NAME, "tr")) > 1
         )
         wait()
 
         # 9) Recorro filas y guardo actuaciones en rango
-        rows = actuaciones_table.find_elements(By.TAG_NAME, "tr")[1:]
+        rows     = actuaciones_table.find_elements(By.TAG_NAME, "tr")[1:]
         url_link = f"{ConsultaProcesosPage.URL}?numeroRadicacion={numero}"
         any_saved = False
 
@@ -146,9 +145,11 @@ def worker_task(numero, driver, results, actes, errors, lock):
                 any_saved = True
                 driver.execute_script("arguments[0].style.backgroundColor='red'", fila)
                 actuac = cds[1].text.strip()
-                anota = cds[2].text.strip()
-                msg = (f"[{idx}/{total}] Proceso {numero}: actuación "
-                       f"'{actuac}' ({fecha_act}) agregada")
+                anota  = cds[2].text.strip()
+                msg    = (
+                    f"[{idx}/{total}] Proceso {numero}: actuación "
+                    f"'{actuac}' ({fecha_act}) agregada"
+                )
                 print(msg)
                 logging.info(msg)
                 with lock:

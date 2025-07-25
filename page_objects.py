@@ -1,8 +1,9 @@
+# page_objects/ConsultaProcesosPage.py
+
 import json
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-
 
 class ConsultaProcesosPage:
     URL = "https://consultaprocesos.ramajudicial.gov.co/Procesos/NumeroRadicacion"
@@ -13,29 +14,36 @@ class ConsultaProcesosPage:
             self.sel = json.load(f)
 
     def load(self):
+        """Carga la URL y espera a que el DOM esté completamente listo."""
         self.driver.get(self.URL)
-        WebDriverWait(self.driver, 10).until(
-            EC.presence_of_element_located((By.TAG_NAME, "body"))
+        WebDriverWait(self.driver, 15).until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
         )
 
-    def _find(self, key, timeout=10):
-        for alt in self.sel[key]:
+    def _find(self, key, timeout=15):
+        """
+        Busca de forma resiliente un selector definido en selectors.json.
+        Prueba cada alternativa hasta que coincida un elemento clickable.
+        """
+        errores = []
+        for alt in self.sel.get(key, []):
             by_str, expr = alt.split(":", 1)
             by = {
                 "xpath": By.XPATH,
-                "css": By.CSS_SELECTOR,
-                "tag": By.TAG_NAME
+                "css":   By.CSS_SELECTOR,
+                "tag":   By.TAG_NAME
             }[by_str]
             try:
                 el = WebDriverWait(self.driver, timeout).until(
                     EC.element_to_be_clickable((by, expr))
                 )
-                # Resalta en rojo
+                # resalta en rojo para debug
                 self.driver.execute_script("arguments[0].style.backgroundColor='red'", el)
                 return el
-            except:
+            except Exception as e:
+                errores.append(f"{alt} → {e}")
                 continue
-        raise RuntimeError(f"Selector '{key}' no encontró elemento.")
+        raise RuntimeError(f"Selector '{key}' no encontró elemento. Detalles: {errores}")
 
     def select_por_numero(self):
         self._find("radio_busqueda_numero").click()
@@ -51,10 +59,12 @@ class ConsultaProcesosPage:
     def click_volver(self):
         try:
             self._find("btn_volver", timeout=5).click()
-        except:
+        except RuntimeError:
+            # si no aparece el botón volver, lo ignoramos
             pass
 
     def get_tablas(self):
-        return WebDriverWait(self.driver, 10).until(
+        """Devuelve todas las tablas presentes en la página."""
+        return WebDriverWait(self.driver, 15).until(
             EC.presence_of_all_elements_located((By.TAG_NAME, "table"))
         )
