@@ -1,11 +1,7 @@
-import pandas as pd
+import openpyxl
 from .config import EXCEL_PATH
 
 def cargar_procesos():
-    df = pd.read_excel(
-        EXCEL_PATH,
-        sheet_name="CONSULTA UNIFICADA DE PROCESOS",
-        usecols="B"
-    )
-    procesos = [str(x).zfill(23) for x in df.iloc[:, 0] if pd.notna(x)]
-    return procesos
+    wb = openpyxl.load_workbook(EXCEL_PATH, data_only=True)
+    ws = wb.active
+    return [ row[1] for row in ws.iter_rows(min_row=2, values_only=True) if row[1] ]

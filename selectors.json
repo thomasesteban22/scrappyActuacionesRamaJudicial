@@ -1,18 +1,14 @@
 {
-  "radio_busqueda_numero": [
+  "radio_busqueda_numero":[
     "css:input[type=radio][name=TipoBusqueda][value=NumeroRadicacion]"
   ],
-  "input_numero": [
+  "input_numero":[
     "xpath://input[contains(@placeholder,'23 dígitos')]"
   ],
-  "btn_consultar": [
-    "xpath://button[.//span[text()='Consultar']]",
-    "css:button.btn-consultar"
+  "btn_consultar":[
+    "xpath://button[.//span[text()='Consultar']]"
   ],
-  "btn_volver": [
-    "xpath://button[.//span[contains(text(),'Volver')]]"
-  ],
-  "tabla_actuaciones": [
-    "xpath://table"
+  "btn_volver":[
+    "xpath://span[text()=' Volver ']"
   ]
 }
