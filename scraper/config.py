@@ -2,18 +2,31 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-ENV            = os.getenv("ENVIRONMENT", "production").upper()
-EXCEL_PATH     = os.getenv(f"EXCEL_PATH_{ENV}")
-PDF_PATH       = os.getenv(f"INFORMACION_PATH_{ENV}")
-EMAIL_USER     = os.getenv("EMAIL_USER")
-EMAIL_PASS     = os.getenv("EMAIL_PASS")
+# Entorno: 'production' o 'development'
+ENV = os.getenv("ENVIRONMENT", "production").lower()
 
-DIAS_BUSQUEDA  = int(os.getenv("DIAS_BUSQUEDA", 5))
-WAIT_TIME      = float(os.getenv("WAIT_TIME", 0))
-NUM_THREADS    = int(os.getenv("NUM_THREADS", 1))
+# Headless en producción o si se fuerza en .env
+HEADLESS = os.getenv("HEADLESS", "false").lower() in ("1","true","yes") or ENV == "production"
 
-OUTPUT_DIR     = os.path.dirname(PDF_PATH)
-LOG_TXT_PATH   = os.path.join(OUTPUT_DIR, "report.txt")
+# Rutas de entrada / salida
+EXCEL_PATH = os.getenv(f"EXCEL_PATH_{ENV.upper()}")
+PDF_PATH   = os.getenv(f"INFORMACION_PATH_{ENV.upper()}")
 
-# Hora programada para arrancar (HH:MM, 24 h), zona America/Bogota
-SCHEDULE_TIME = os.getenv("SCHEDULE_TIME", "01:00")
+# Chrome / Chromedriver (sólo en VPS / Docker)
+CHROME_BIN        = os.getenv(f"CHROME_BIN_{ENV.upper()}")
+CHROMEDRIVER_PATH = os.getenv(f"CHROMEDRIVER_PATH_{ENV.upper()}")
+
+# Email
+EMAIL_USER = os.getenv("EMAIL_USER")
+EMAIL_PASS = os.getenv("EMAIL_PASS")
+
+# Parámetros de ejecución
+DIAS_BUSQUEDA   = int(os.getenv("DIAS_BUSQUEDA", 5))
+WAIT_TIME       = float(os.getenv("WAIT_TIME", 0.5))
+ELEMENT_TIMEOUT = int(os.getenv("ELEMENT_TIMEOUT", 20))
+SCHEDULE_TIME   = os.getenv("SCHEDULE_TIME", "01:00")
+NUM_THREADS     = int(os.getenv("NUM_THREADS", 3))
+
+# Directorios auxiliares
+OUTPUT_DIR   = os.path.dirname(PDF_PATH) or "./output"
+LOG_TXT_PATH = os.path.join(OUTPUT_DIR, "report.txt")

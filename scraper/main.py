@@ -15,6 +15,7 @@ from email.mime.application import MIMEApplication
 # 1) Silencia TensorFlow y Chrome/DevTools
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['WEBVIEW_LOG_LEVEL'] = '3'
+os.environ['ABSL_LOG_LEVEL'] = '3'
 
 # 2) Config global de logging: sólo INFO y superiores
 logging.basicConfig(

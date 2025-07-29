@@ -1,24 +1,24 @@
+# scraper/browser.py
+
 import os
 import time
 import logging
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
-from .config import ENV
+from .config import ENV, HEADLESS, CHROME_BIN, CHROMEDRIVER_PATH
 
-# Silencia internamente los logs de webdriver_manager (por si queda alguna llamada)
+# Silenciar logs internos de webdriver_manager
 logging.getLogger('WDM').setLevel(logging.ERROR)
 logging.getLogger('webdriver_manager').setLevel(logging.ERROR)
 
 def new_chrome_driver(worker_id=None):
     opts = webdriver.ChromeOptions()
-    # Permitir CORS y ocultar indicadores de Selenium
     opts.add_argument("--remote-allow-origins=*")
     opts.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
     opts.add_experimental_option("useAutomationExtension", False)
     opts.add_argument("--disable-blink-features=AutomationControlled")
-
-    # Bloquear recursos innecesarios
+    # Bloquear cargas innecesarias
     prefs = {
         "profile.managed_default_content_settings.images":      2,
         "profile.managed_default_content_settings.stylesheets": 2,
@@ -27,8 +27,8 @@ def new_chrome_driver(worker_id=None):
     opts.add_experimental_option("prefs", prefs)
     opts.add_argument("--log-level=3")
 
-    # Modo headless en producción
-    if ENV.upper() == "PRODUCTION":
+    # Headless según ENV o .env
+    if HEADLESS:
         opts.add_argument("--headless")
         opts.add_argument("--disable-gpu")
         opts.add_argument("--no-sandbox")
@@ -39,26 +39,46 @@ def new_chrome_driver(worker_id=None):
     # Perfil aislado por worker
     base = os.path.join(os.getcwd(), "tmp_profiles")
     os.makedirs(base, exist_ok=True)
-    stamp = worker_id if worker_id is not None else int(time.time() * 1000)
+    stamp = worker_id or int(time.time() * 1000)
     profile_dir = os.path.join(base, f"profile_{stamp}")
     os.makedirs(profile_dir, exist_ok=True)
     opts.add_argument(f"--user-data-dir={profile_dir}")
 
-    # Indicar el binario de Chromium instalado
-    chrome_bin = os.environ.get("CHROME_BIN", "/usr/bin/chromium")
-    opts.binary_location = chrome_bin
+    # Usar binario de Chrome si está definido
+    if CHROME_BIN and os.path.isfile(CHROME_BIN):
+        opts.binary_location = CHROME_BIN
 
-    # Servicio apuntando al chromedriver instalado por APT
-    chromedriver_path = os.environ.get("CHROMEDRIVER_PATH", "/usr/lib/chromium/chromedriver")
-    svc = Service(chromedriver_path)
+    # Configurar Service de chromedriver
+    if CHROMEDRIVER_PATH and os.path.isfile(CHROMEDRIVER_PATH):
+        svc = Service(executable_path=CHROMEDRIVER_PATH, log_path=os.devnull)
+    else:
+        from webdriver_manager.chrome import ChromeDriverManager
+        drv = ChromeDriverManager().install()
+        svc = Service(executable_path=drv, log_path=os.devnull)
 
-    if ENV.upper() != "PRODUCTION":
-        logging.info(f"Worker Chrome #{stamp} iniciado (headless={ENV.upper()=='PRODUCTION'})")
+    # --- Aquí suprimimos TODO lo que imprima el proceso hijo (Chrome/DevTools, TF-Lite, absl, etc.) ---
+    saved_stdout = os.dup(1)
+    saved_stderr = os.dup(2)
+    devnull = os.open(os.devnull, os.O_RDWR)
+    try:
+        os.dup2(devnull, 1)
+        os.dup2(devnull, 2)
+        driver = webdriver.Chrome(service=svc, options=opts)
+    finally:
+        # restauramos
+        os.dup2(saved_stdout, 1)
+        os.dup2(saved_stderr, 2)
+        os.close(saved_stdout)
+        os.close(saved_stderr)
+        os.close(devnull)
 
-    return webdriver.Chrome(service=svc, options=opts)
+    driver.set_page_load_timeout(60)
+    driver.implicitly_wait(5)
 
+    if not HEADLESS:
+        logging.info(f"➜ Chrome (worker {stamp}) headless={HEADLESS}")
+    return driver
 
 def is_page_maintenance(driver):
-    body_text = driver.find_element(By.TAG_NAME, "body").text.lower()
-    keywords = ("mantenimiento", "temporalmente fuera")
-    return any(k in body_text for k in keywords)
+    body = driver.find_element(By.TAG_NAME, "body").text.lower()
+    return any(k in body for k in ("mantenimiento", "temporalmente fuera"))
