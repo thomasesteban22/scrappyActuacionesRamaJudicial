@@ -1,5 +1,3 @@
-# page_objects/ConsultaProcesosPage.py
-
 import json
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -14,39 +12,42 @@ class ConsultaProcesosPage:
             self.sel = json.load(f)
 
     def load(self):
-        """Carga la URL y espera a que el DOM esté completamente listo."""
         self.driver.get(self.URL)
-        WebDriverWait(self.driver, 15).until(
-            lambda d: d.execute_script("return document.readyState") == "complete"
+        WebDriverWait(self.driver, 20).until(
+            EC.presence_of_element_located((By.TAG_NAME, "body"))
         )
 
-    def _find(self, key, timeout=15):
-        """
-        Busca de forma resiliente un selector definido en selectors.json.
-        Prueba cada alternativa hasta que coincida un elemento clickable.
-        """
-        errores = []
+    def _find(self, key, timeout=20):
         for alt in self.sel.get(key, []):
             by_str, expr = alt.split(":", 1)
-            by = {
-                "xpath": By.XPATH,
-                "css":   By.CSS_SELECTOR,
-                "tag":   By.TAG_NAME
-            }[by_str]
+            by = {"xpath": By.XPATH, "css": By.CSS_SELECTOR, "tag": By.TAG_NAME}[by_str]
             try:
                 el = WebDriverWait(self.driver, timeout).until(
                     EC.element_to_be_clickable((by, expr))
                 )
-                # resalta en rojo para debug
+                # lo resaltamos para debugging
                 self.driver.execute_script("arguments[0].style.backgroundColor='red'", el)
                 return el
-            except Exception as e:
-                errores.append(f"{alt} → {e}")
+            except Exception:
                 continue
-        raise RuntimeError(f"Selector '{key}' no encontró elemento. Detalles: {errores}")
+        raise RuntimeError(f"Selector '{key}' no encontró elemento.")
 
     def select_por_numero(self):
-        self._find("radio_busqueda_numero").click()
+        # 1) Primero intentamos con el selector custom
+        try:
+            radio = self._find("radio_busqueda_numero")
+            radio.click()
+            return
+        except RuntimeError:
+            pass
+
+        # 2) Fallback: buscamos todos los radios por name y clicamos el de value correcto
+        radios = self.driver.find_elements(By.NAME, "TipoBusqueda")
+        for r in radios:
+            if r.get_attribute("value") == "NumeroRadicacion":
+                r.click()
+                return
+        raise RuntimeError("radio_busqueda_numero no encontrado ni por fallback.")
 
     def enter_numero(self, numero):
         inp = self._find("input_numero")
@@ -59,12 +60,10 @@ class ConsultaProcesosPage:
     def click_volver(self):
         try:
             self._find("btn_volver", timeout=5).click()
-        except RuntimeError:
-            # si no aparece el botón volver, lo ignoramos
+        except Exception:
             pass
 
     def get_tablas(self):
-        """Devuelve todas las tablas presentes en la página."""
-        return WebDriverWait(self.driver, 15).until(
+        return WebDriverWait(self.driver, 10).until(
             EC.presence_of_all_elements_located((By.TAG_NAME, "table"))
         )

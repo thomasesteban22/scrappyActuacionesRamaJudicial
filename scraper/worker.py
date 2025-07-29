@@ -1,9 +1,4 @@
-# scraper/worker.py
-
-import time
-import random
-import logging
-import itertools
+import time, random, logging, itertools
 from datetime import date, timedelta
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -14,169 +9,96 @@ from .config import DIAS_BUSQUEDA, WAIT_TIME
 from .browser import is_page_maintenance
 from page_objects import ConsultaProcesosPage
 
-# Contador para mostrar progreso
 process_counter = itertools.count(1)
-TOTAL_PROCESSES = 0  # ← se asigna en main.py: worker.TOTAL_PROCESSES = len(procesos)
+TOTAL_PROCESSES = 0
 
 def wait():
-    """Pausa WAIT_TIME con hasta 50% de jitter."""
     extra = WAIT_TIME * 0.5 * random.random()
     time.sleep(WAIT_TIME + extra)
 
 def worker_task(numero, driver, results, actes, errors, lock):
-    idx       = next(process_counter)
-    total     = TOTAL_PROCESSES or idx
-    remaining = total - idx
-    print(f"[{idx}/{total}] Proceso {numero} → iniciando (quedan {remaining})")
-    logging.info(f"[{idx}/{total}] Iniciando proceso {numero}; faltan {remaining}")
-
-    page   = ConsultaProcesosPage(driver)
+    idx = next(process_counter)
+    total = TOTAL_PROCESSES or idx
+    logging.info(f"[{idx}/{total}] Iniciando proceso {numero}")
+    page = ConsultaProcesosPage(driver)
     cutoff = date.today() - timedelta(days=DIAS_BUSQUEDA)
 
     try:
-        # 1) Cargo la página principal y espero DOM completo
-        page.load()
-        wait()
-
-        # 1.a) Mantenimiento
+        page.load(); wait()
         if is_page_maintenance(driver):
-            logging.warning(f"{numero}: Mantenimiento detectado; durmiendo 30 min")
-            time.sleep(1800)
-            page.load()
-            wait()
+            logging.warning("Mantenimiento, durmiendo 30m")
+            time.sleep(1800); page.load(); wait()
 
-        # 2) Selecciono “Todos los Procesos”
-        page.select_por_numero()
-        wait()
+        page.select_por_numero(); wait()
+        page.enter_numero(numero); wait()
+        page.click_consultar(); wait()
 
-        # 3) Ingreso número de radicación
-        page.enter_numero(numero)
-        wait()
-
-        # 4) Clic en “Consultar”
-        page.click_consultar()
-        wait()
-
-        # 4.a) Cierre modal múltiple si aparece
+        # cerrar modal múltiple
         try:
-            volver_modal = WebDriverWait(driver, 5).until(
-                EC.element_to_be_clickable((By.XPATH,
-                    "//*[@id='app']/div[3]/div/div/div[2]/div/button/span"
-                ))
+            volver = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, "//*[@id='app']/div[3]//button"))
             )
-            driver.execute_script("arguments[0].style.backgroundColor='red'", volver_modal)
-            volver_modal.click()
-            wait()
-            print(f"[{idx}/{total}] Proceso {numero}: modal múltiple detectado → cerrado y continúo")
-            logging.info(f"{numero}: modal múltiple detectado, continuando flujo")
+            volver.click(); wait()
         except TimeoutException:
             pass
 
-        # 5) Espero a que carguen los spans de fecha en el DOM
-        xpath_fecha = (
-            "//*[@id='mainContent']/div/div/div/div[2]/div/"
-            "div/div[2]/div/table/tbody/tr/td[3]/div/button/span"
-        )
+        # spans de fecha
+        xpath_fecha = "//*[@id='mainContent']//table/tbody/tr/td[3]/div/button/span"
         spans = WebDriverWait(driver, 20).until(
             EC.presence_of_all_elements_located((By.XPATH, xpath_fecha))
         )
         wait()
 
-        # 6) Comparo cada fecha vs cutoff y busco la primera aceptada
-        match_span = None
+        match = None
         for s in spans:
-            texto = s.text.strip()
+            txt = s.text.strip()
             try:
-                fecha_obj = date.fromisoformat(texto)
-            except ValueError:
-                print(f"[{idx}/{total}] Proceso {numero}: '{texto}' no es fecha → ignoro")
+                f = date.fromisoformat(txt)
+            except:
                 continue
+            if f >= cutoff:
+                match = s; break
 
-            driver.execute_script("arguments[0].style.backgroundColor='red'", s)
-            decision = "ACEPTADA" if fecha_obj >= cutoff else "RECHAZADA"
-            print(f"[{idx}/{total}] Fecha obtenida {fecha_obj} vs cutoff {cutoff} → {decision}")
-            logging.info(f"{numero}: fecha {fecha_obj} vs {cutoff} → {decision}")
-
-            if fecha_obj >= cutoff:
-                match_span = s
-                break
-
-        if not match_span:
-            print(f"[{idx}/{total}] Proceso {numero}: ninguna fecha en rango → salto")
-            logging.info(f"{numero}: sin fechas ≥ {cutoff}")
+        if not match:
+            logging.info(f"{numero}: sin fechas ≥ cutoff")
             return
 
-        # 7) Click en el botón padre del span aceptado
-        btn = match_span.find_element(By.XPATH, "..")
-        print(f"[{idx}/{total}] Proceso {numero}: clic en fecha {match_span.text.strip()}")
-        logging.info(f"{numero}: clic en fecha {match_span.text.strip()}")
-        driver.execute_script("arguments[0].scrollIntoView()", btn)
-        btn.click()
-        wait()
+        # click en span padre
+        btn = match.find_element(By.XPATH, "..")
+        btn.click(); wait()
 
-        # 8) Espero la tabla de actuaciones y al menos una fila de datos
-        table_xpath = (
-            "/html/body/div/div[1]/div[3]/main/div/div/div/div[2]/div/"
-            "div/div[2]/div[2]/div[2]/div/div/div[2]/div/div[1]/div[2]/div/table"
-        )
-        actuaciones_table = WebDriverWait(driver, 20).until(
+        # tabla de actuaciones
+        table_xpath = "/html/body//table"
+        table = WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.XPATH, table_xpath))
         )
         WebDriverWait(driver, 10).until(
-            lambda d: len(actuaciones_table.find_elements(By.TAG_NAME, "tr")) > 1
+            lambda d: len(table.find_elements(By.TAG_NAME,"tr")) > 1
         )
         wait()
 
-        # 9) Recorro filas y guardo actuaciones en rango
-        rows     = actuaciones_table.find_elements(By.TAG_NAME, "tr")[1:]
-        url_link = f"{ConsultaProcesosPage.URL}?numeroRadicacion={numero}"
+        # guardo filas
         any_saved = False
-
-        for fila in rows:
-            cds = fila.find_elements(By.TAG_NAME, "td")
-            if len(cds) < 3:
-                continue
+        url = f"{ConsultaProcesosPage.URL}?numeroRadicacion={numero}"
+        for row in table.find_elements(By.TAG_NAME,"tr")[1:]:
+            cols = row.find_elements(By.TAG_NAME,"td")
+            if len(cols) < 3: continue
             try:
-                fecha_act = date.fromisoformat(cds[0].text.strip())
-            except ValueError:
-                continue
-
-            if fecha_act >= cutoff:
+                fact = date.fromisoformat(cols[0].text.strip())
+            except: continue
+            if fact >= cutoff:
                 any_saved = True
-                driver.execute_script("arguments[0].style.backgroundColor='red'", fila)
-                actuac = cds[1].text.strip()
-                anota  = cds[2].text.strip()
-                msg    = (
-                    f"[{idx}/{total}] Proceso {numero}: actuación "
-                    f"'{actuac}' ({fecha_act}) agregada"
-                )
-                print(msg)
-                logging.info(msg)
+                actu = cols[1].text.strip()
+                anot = cols[2].text.strip()
                 with lock:
-                    actes.append((numero,
-                                  fecha_act.isoformat(),
-                                  actuac,
-                                  anota,
-                                  url_link))
+                    actes.append((numero, fact.isoformat(), actu, anot, url))
 
-        # 10) Registro URL
         with lock:
-            results.append((numero, url_link))
+            results.append((numero, url))
 
-        if any_saved:
-            print(f"[{idx}/{total}] Proceso {numero}: registros guardados")
-            logging.info(f"{numero}: proceso completado con guardado")
-        else:
-            print(f"[{idx}/{total}] Proceso {numero}: ninguna actuación guardada tras click → salto")
-            logging.info(f"{numero}: proceso finalizado sin actuaciones guardadas")
+        logging.info(f"{numero}: guardadas actuaciones: {any_saved}")
+        page.click_volver(); wait()
 
-        # 11) Volver al listado
-        page.click_volver()
-        wait()
-
-    except TimeoutException as te:
-        logging.error(f"{numero}: TIMEOUT → {te}")
-        raise
     except Exception as e:
-        logging.error(f"{numero}: ERROR general → {e}")
+        logging.error(f"{numero}: falla → {e}")
         raise
