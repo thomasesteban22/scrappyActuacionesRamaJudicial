@@ -1,181 +1,127 @@
-import os
-import csv
-import smtplib
-import time
-import threading
-import logging
-import itertools
+import os, csv, smtplib, time, threading, logging, itertools
 from queue import Queue
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from email.mime.multipart import MIMEMultipart
-from email.mime.text      import MIMEText
+from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 
-# Silencia logs muy ruidosos
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ['WEBVIEW_LOG_LEVEL']    = '3'
-os.environ['ABSL_LOG_LEVEL']       = '3'
+# Silencia TF y DevTools
+os.environ['TF_CPP_MIN_LOG_LEVEL']='3'
+os.environ['WEBVIEW_LOG_LEVEL']='3'
+os.environ['ABSL_LOG_LEVEL']='3'
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s'
-)
-for noisy in ('selenium','urllib3','absl','google_apis'):
-    logging.getLogger(noisy).setLevel(logging.WARNING)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+for n in ('selenium','urllib3','absl','WDM','webdriver_manager'):
+    logging.getLogger(n).setLevel(logging.WARNING)
 
-from .config    import (
-    OUTPUT_DIR, NUM_THREADS,
-    PDF_PATH, EMAIL_USER,
-    EMAIL_PASS, SCHEDULE_TIME
-)
-from .loader    import cargar_procesos
-from .browser   import new_chrome_driver
-from .worker    import worker_task, process_counter
-import scraper.worker as worker
-from .reporter  import generar_pdf
+from .config import OUTPUT_DIR, NUM_THREADS, PDF_PATH, EMAIL_USER, EMAIL_PASS, SCHEDULE_TIME
+from .loader import cargar_procesos
+from .browser import new_chrome_driver
+from .worker import worker_task, TOTAL_PROCESSES as _TOTAL
+from .reporter import generar_pdf
 
 def exportar_csv(actes, start_ts):
-    fecha_reg    = date.fromtimestamp(start_ts).isoformat()
-    csv_path     = os.path.join(OUTPUT_DIR, "actuaciones.csv")
-    headers      = [
-        "idInterno","quienRegistro","fechaRegistro",
-        "fechaEstado","etapa","actuacion","observacion"
-    ]
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+    fecha = date.fromtimestamp(start_ts).isoformat()
+    p = os.path.join(OUTPUT_DIR, "actuaciones.csv")
+    with open(p,"w",newline="",encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(headers)
-        for num, fecha, actu, anot, _ in actes:
-            w.writerow([num,"Sistema",fecha_reg,fecha,"",actu,anot])
-    logging.info(f"CSV generado: {csv_path}")
+        w.writerow(["idInterno","quienRegistro","fechaRegistro","fechaEstado","etapa","actuacion","observacion"])
+        for num,fe,ac,an,u in actes:
+            w.writerow([num,"Sistema",fecha,fe,"",ac,an])
+    logging.info(f"CSV: {p}")
 
-def send_report_email():
-    ahora     = datetime.now()
-    fecha_str = ahora.strftime("%A %d-%m-%Y a las %I:%M %p").capitalize()
-    smtp      = smtplib.SMTP_SSL("smtp.gmail.com", 465)
-    smtp.login(EMAIL_USER, EMAIL_PASS)
-
-    msg               = MIMEMultipart()
-    msg["Subject"]    = "Reporte Diario de Actuaciones"
-    msg["From"]       = EMAIL_USER
-    msg["To"]         = EMAIL_USER
-    msg.attach(MIMEText(
-        f"Adjunto el reporte de actuaciones generado el {fecha_str}.",
-        "plain"
-    ))
-
-    with open(PDF_PATH, "rb") as f:
-        part = MIMEApplication(f.read(), Name=os.path.basename(PDF_PATH))
-        part.add_header(
-            'Content-Disposition',
-            'attachment',
-            filename=os.path.basename(PDF_PATH)
-        )
-        msg.attach(part)
-
-    smtp.sendmail(EMAIL_USER, [EMAIL_USER], msg.as_string())
+def send_email():
+    now = datetime.now().strftime("%A %d-%m-%Y %I:%M %p")
+    smtp = smtplib.SMTP_SSL("smtp.gmail.com",465)
+    smtp.login(EMAIL_USER,EMAIL_PASS)
+    msg = MIMEMultipart(); msg["From"]=EMAIL_USER; msg["To"]=EMAIL_USER
+    msg["Subject"]="Reporte Diario de Actuaciones"
+    msg.attach(MIMEText(f"Reporte generado: {now}","plain"))
+    with open(PDF_PATH,"rb") as f:
+        part=MIMEApplication(f.read(),Name=os.path.basename(PDF_PATH))
+    part.add_header("Content-Disposition","attachment",filename=os.path.basename(PDF_PATH))
+    msg.attach(part)
+    smtp.sendmail(EMAIL_USER,[EMAIL_USER],msg.as_string())
     smtp.quit()
-    logging.info("Correo enviado exitosamente.")
+    logging.info("Correo enviado.")
 
 def ejecutar_ciclo():
     # reinicia contador
-    worker.process_counter = itertools.count(1)
-
-    start_ts = time.time()
-    # limpia viejos
-    if os.path.exists(PDF_PATH):
-        os.remove(PDF_PATH)
-    old_csv = os.path.join(OUTPUT_DIR, "actuaciones.csv")
-    if os.path.exists(old_csv):
-        os.remove(old_csv)
+    from .worker import process_counter
+    process_counter = itertools.count(1)
+    start = time.time()
+    if os.path.exists(PDF_PATH): os.remove(PDF_PATH)
+    csv_old=os.path.join(OUTPUT_DIR,"actuaciones.csv")
+    if os.path.exists(csv_old): os.remove(csv_old)
 
     procesos = cargar_procesos()
-    TOTAL    = len(procesos)
-    worker.TOTAL_PROCESSES = TOTAL
-
+    TOTAL = len(procesos)
+    from .worker import TOTAL_PROCESSES
+    globals()['_TOTAL'] = TOTAL
     logging.info(f"Total a escanear: {TOTAL}")
     logging.info(">>> INICIO DE CICLO <<<")
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(OUTPUT_DIR,exist_ok=True)
 
-    q       = Queue()
-    for num in procesos:
-        q.put(num)
-    for _ in range(NUM_THREADS):
-        q.put(None)
+    q=Queue()
+    for n in procesos: q.put(n)
+    for _ in range(NUM_THREADS): q.put(None)
 
-    drivers = [new_chrome_driver(i) for i in range(NUM_THREADS)]
+    drivers=[new_chrome_driver(i) for i in range(NUM_THREADS)]
     results, actes, errors = [], [], []
-    lock    = threading.Lock()
-    threads = []
+    lock = threading.Lock()
+    threads=[]
 
     def loop(driver):
         while True:
-            numero = q.get(); q.task_done()
-            if numero is None:
-                break
-            for intento in range(10):
+            n=q.get(); q.task_done()
+            if n is None: break
+            for i in range(10):
                 try:
-                    worker_task(numero, driver, results, actes, errors, lock)
+                    worker_task(n, driver, results, actes, errors, lock)
                     break
-                except Exception as exc:
-                    logging.warning(f"{numero}: intento {intento+1}/10 fallido ({exc})")
-                    if intento == 9:
-                        with lock:
-                            errors.append((numero, str(exc)))
+                except Exception as e:
+                    logging.warning(f"{n}: intento {i+1} fallido ({e})")
+                    if i==9:
+                        with lock: errors.append((n,str(e)))
         driver.quit()
 
-    for drv in drivers:
-        t = threading.Thread(target=loop, args=(drv,), daemon=True)
-        t.start()
-        threads.append(t)
+    for d in drivers:
+        t=threading.Thread(target=loop,args=(d,),daemon=True)
+        t.start(); threads.append(t)
 
     q.join()
-    for t in threads:
-        t.join()
+    for t in threads: t.join()
 
-    # genera reportes y envía
-    generar_pdf(TOTAL, actes, errors, start_ts, time.time())
-    exportar_csv(actes, start_ts)
-    try:
-        send_report_email()
-    except Exception as e:
-        logging.error(f"Error enviando correo: {e}")
+    generar_pdf(TOTAL, actes, errors, start, time.time())
+    exportar_csv(actes, start)
+    try: send_email()
+    except Exception as e: logging.error(f"Mail: {e}")
 
-    err = len(errors)
-    esc = TOTAL - err
-    logging.info(f"=== RESUMEN CICLO === Total {TOTAL} | Escaneados {esc} | Errores {err}")
-    if err:
-        for n,m in errors:
-            logging.error(f" • {n}: {m}")
-    logging.info(">>> FIN DE CICLO <<<\n")
+    err=len(errors); esc=TOTAL-err
+    logging.info(f"=== RESUMEN: {TOTAL} esc:{esc} err:{err} ===")
+    logging.info(">>> FIN CICLO <<<\n")
 
 def main():
-    logging.info("Scheduler iniciado, esperando el primer ciclo diario...")
-    bogota_tz = ZoneInfo("America/Bogota")
-    hh, mm    = map(int, SCHEDULE_TIME.split(":"))
-
+    logging.info("Scheduler iniciado...")
+    tz=ZoneInfo("America/Bogota")
+    hh,mm=map(int,SCHEDULE_TIME.split(":"))
     while True:
-        now    = datetime.now(bogota_tz)
-        target = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
-        if now >= target:
-            target += timedelta(days=1)
-        wait_sec = (target - now).total_seconds()
-
-        # avisos cada hora y al final en mm:ss
-        rem = wait_sec
-        while rem > 0:
-            if rem > 3600:
-                hrs = int(rem // 3600)
-                logging.info(f"Faltan {hrs} hora(s) para la próxima ejecución.")
-                time.sleep(3600)
-                rem -= 3600
+        now=datetime.now(tz)
+        tgt=now.replace(hour=hh,minute=mm,second=0,microsecond=0)
+        if now>=tgt: tgt+=timedelta(days=1)
+        rem=(tgt-now).total_seconds()
+        # avisos cada hora, luego minutos
+        while rem>0:
+            if rem>3600:
+                h=int(rem//3600)
+                logging.info(f"Faltan {h}h para ejecutar")
+                time.sleep(3600); rem-=3600
             else:
-                m = int(rem // 60); s = int(rem % 60)
-                logging.info(f"Faltan {m} minuto(s) y {s} segundo(s) para la ejecución.")
-                time.sleep(rem)
-                rem = 0
-
+                m=int(rem//60); s=int(rem%60)
+                logging.info(f"Faltan {m}m {s}s para ejecutar")
+                time.sleep(rem); rem=0
         ejecutar_ciclo()
 
-if __name__ == "__main__":
+if __name__=="__main__":
     main()

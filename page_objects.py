@@ -2,52 +2,40 @@ import json
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from .config import ELEMENT_TIMEOUT
 
 class ConsultaProcesosPage:
     URL = "https://consultaprocesos.ramajudicial.gov.co/Procesos/NumeroRadicacion"
 
-    def __init__(self, driver, selectors_path="selectors.json"):
+    def __init__(self, driver, path="selectors.json"):
         self.driver = driver
-        with open(selectors_path, 'r', encoding='utf-8') as f:
+        with open(path, encoding="utf-8") as f:
             self.sel = json.load(f)
 
     def load(self):
         self.driver.get(self.URL)
-        WebDriverWait(self.driver, 20).until(
-            EC.presence_of_element_located((By.TAG_NAME, "body"))
+        WebDriverWait(self.driver, ELEMENT_TIMEOUT).until(
+            EC.presence_of_element_located((By.TAG_NAME,"body"))
         )
 
-    def _find(self, key, timeout=20):
-        for alt in self.sel.get(key, []):
-            by_str, expr = alt.split(":", 1)
-            by = {"xpath": By.XPATH, "css": By.CSS_SELECTOR, "tag": By.TAG_NAME}[by_str]
+    def _find(self, key, timeout=ELEMENT_TIMEOUT):
+        for expr in self.sel[key]:
+            by, selector = expr.split(":",1)
+            by = {
+                "css": By.CSS_SELECTOR,
+                "xpath": By.XPATH
+            }[by]
             try:
                 el = WebDriverWait(self.driver, timeout).until(
-                    EC.element_to_be_clickable((by, expr))
+                    EC.element_to_be_clickable((by,selector))
                 )
-                # lo resaltamos para debugging
-                self.driver.execute_script("arguments[0].style.backgroundColor='red'", el)
                 return el
-            except Exception:
+            except:
                 continue
-        raise RuntimeError(f"Selector '{key}' no encontró elemento.")
+        raise RuntimeError(f"{key} no encontrado ni por fallback.")
 
     def select_por_numero(self):
-        # 1) Primero intentamos con el selector custom
-        try:
-            radio = self._find("radio_busqueda_numero")
-            radio.click()
-            return
-        except RuntimeError:
-            pass
-
-        # 2) Fallback: buscamos todos los radios por name y clicamos el de value correcto
-        radios = self.driver.find_elements(By.NAME, "TipoBusqueda")
-        for r in radios:
-            if r.get_attribute("value") == "NumeroRadicacion":
-                r.click()
-                return
-        raise RuntimeError("radio_busqueda_numero no encontrado ni por fallback.")
+        self._find("radio_busqueda_numero").click()
 
     def enter_numero(self, numero):
         inp = self._find("input_numero")
@@ -60,10 +48,8 @@ class ConsultaProcesosPage:
     def click_volver(self):
         try:
             self._find("btn_volver", timeout=5).click()
-        except Exception:
+        except:
             pass
 
     def get_tablas(self):
-        return WebDriverWait(self.driver, 10).until(
-            EC.presence_of_all_elements_located((By.TAG_NAME, "table"))
-        )
+        return self.driver.find_elements(By.TAG_NAME, "table")
