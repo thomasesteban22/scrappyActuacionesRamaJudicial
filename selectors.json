@@ -1,19 +1,22 @@
 {
   "radio_busqueda_numero": [
-    "xpath://label[contains(., 'Todos los Procesos (consulta completa, menos rápida)')]",
-    "xpath://input[@id='input-113']"
+    "css:input[type=radio][name=TipoBusqueda][value=NumeroRadicacion]",
+    "xpath://input[@type='radio' and @name='TipoBusqueda' and @value='NumeroRadicacion']"
   ],
   "input_numero": [
-    "xpath://input[@placeholder='Ingrese los 23 dígitos del número de Radicación']"
+    "css:input[type=text][name=NumeroRadicacion]",
+    "xpath://input[@type='text' and @name='NumeroRadicacion']"
   ],
   "btn_consultar": [
-    "xpath://span[text()='Consultar']",
-    "css:button.btn-consultar"
+    "css:button[type=submit][title='Consultar']",
+    "xpath://button[contains(normalize-space(.), 'Consultar')]"
   ],
   "btn_volver": [
-    "xpath://span[text()=' Volver ']"
+    "css:button[title='Volver']",
+    "xpath://button[contains(normalize-space(.), 'Volver')]"
   ],
   "tabla_actuaciones": [
-    "tag:table"
+    "xpath://div[contains(@class,'Actuaciones')]//table",
+    "css:div.Actuaciones table"
   ]
 }
