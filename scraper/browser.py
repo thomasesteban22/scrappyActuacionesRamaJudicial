@@ -20,7 +20,7 @@ def new_chrome_driver(worker_id=None):
     opts.add_experimental_option("useAutomationExtension", False)
     opts.add_argument("--disable-blink-features=AutomationControlled")
 
-    # Bloquear cargas innecesarias (imágenes, CSS, fuentes)
+    # Bloquear recursos innecesarios
     prefs = {
         "profile.managed_default_content_settings.images":      2,
         "profile.managed_default_content_settings.stylesheets": 2,
@@ -29,7 +29,7 @@ def new_chrome_driver(worker_id=None):
     opts.add_experimental_option("prefs", prefs)
     opts.add_argument("--log-level=3")
 
-    # Headless si toca
+    # Headless según configuración
     if HEADLESS:
         opts.add_argument("--headless")
         opts.add_argument("--disable-gpu")
@@ -50,15 +50,22 @@ def new_chrome_driver(worker_id=None):
     if CHROME_BIN and os.path.isfile(CHROME_BIN):
         opts.binary_location = CHROME_BIN
 
-    # Preparamos el Service para chromedriver
-    if CHROMEDRIVER_PATH and os.path.isfile(CHROMEDRIVER_PATH):
-        svc = Service(executable_path=CHROMEDRIVER_PATH, log_path=os.devnull)
-    else:
+    # ─── Selección de Service ───
+    # En producción (VPS/docker) siempre usamos webdriver-manager
+    if ENV.lower() == "production":
         from webdriver_manager.chrome import ChromeDriverManager
-        drv = ChromeDriverManager().install()
-        svc = Service(executable_path=drv, log_path=os.devnull)
+        driver_path = ChromeDriverManager().install()
+        svc = Service(executable_path=driver_path, log_path=os.devnull)
+    else:
+        # En desarrollo usamos el CHROMEDRIVER_PATH si existe, si no fallback
+        if CHROMEDRIVER_PATH and os.path.isfile(CHROMEDRIVER_PATH):
+            svc = Service(executable_path=CHROMEDRIVER_PATH, log_path=os.devnull)
+        else:
+            from webdriver_manager.chrome import ChromeDriverManager
+            driver_path = ChromeDriverManager().install()
+            svc = Service(executable_path=driver_path, log_path=os.devnull)
 
-    # ══ Aquí redireccionamos toda la salida de stdout/stderr a /dev/null ══
+    # ─── Silenciamos la salida de ChromeDriver y del navegador ───
     saved_stdout = os.dup(1)
     saved_stderr = os.dup(2)
     devnull = os.open(os.devnull, os.O_RDWR)
@@ -67,14 +74,13 @@ def new_chrome_driver(worker_id=None):
         os.dup2(devnull, 2)
         driver = webdriver.Chrome(service=svc, options=opts)
     finally:
-        # Restauramos stdout y stderr
         os.dup2(saved_stdout, 1)
         os.dup2(saved_stderr, 2)
         os.close(saved_stdout)
         os.close(saved_stderr)
         os.close(devnull)
 
-    # Timeouts y esperas
+    # Timeouts y esperas por defecto
     driver.set_page_load_timeout(60)
     driver.implicitly_wait(5)
 
