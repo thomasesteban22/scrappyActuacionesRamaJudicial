@@ -1,14 +1,19 @@
 {
-  "radio_busqueda_numero":[
-    "css:input[type=radio][name=TipoBusqueda][value=NumeroRadicacion]"
+  "radio_busqueda_numero": [
+    "css:input[name='TipoBusqueda'][value='NumeroRadicacion']",
+    "xpath://label[contains(., 'Todos los Procesos')]"
   ],
-  "input_numero":[
-    "xpath://input[contains(@placeholder,'23 dígitos')]"
+  "input_numero": [
+    "xpath://input[@placeholder='Ingrese los 23 dígitos del número de Radicación']"
   ],
-  "btn_consultar":[
-    "xpath://button[.//span[text()='Consultar']]"
+  "btn_consultar": [
+    "xpath://span[text()='Consultar']",
+    "css:button.btn-consultar"
   ],
-  "btn_volver":[
+  "btn_volver": [
     "xpath://span[text()=' Volver ']"
+  ],
+  "tabla_actuaciones": [
+    "tag:table"
   ]
 }
