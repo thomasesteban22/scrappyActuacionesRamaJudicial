@@ -1,8 +1,5 @@
-# scraper/config.py
-
 import os
 from dotenv import load_dotenv
-
 load_dotenv()
 
 # Entorno: 'production' o 'development'
@@ -12,10 +9,11 @@ ENV = os.getenv("ENVIRONMENT", "production").lower()
 HEADLESS = os.getenv("HEADLESS", "false").lower() in ("1","true","yes") or ENV == "production"
 
 # Rutas de entrada / salida
-EXCEL_PATH = os.getenv(f"EXCEL_PATH_{ENV.upper()}")
-PDF_PATH   = os.getenv(f"INFORMACION_PATH_{ENV.upper()}")
+EXCEL_PATH       = os.getenv(f"EXCEL_PATH_{ENV.upper()}")
+PDF_PATH         = os.getenv(f"INFORMACION_PATH_{ENV.upper()}")
+OUTPUT_DIR       = os.path.dirname(PDF_PATH) or "./output"
 
-# Chrome / Chromedriver (sólo en VPS / Docker)
+# Chrome / Chromedriver
 CHROME_BIN        = os.getenv(f"CHROME_BIN_{ENV.upper()}")
 CHROMEDRIVER_PATH = os.getenv(f"CHROMEDRIVER_PATH_{ENV.upper()}")
 
@@ -30,8 +28,5 @@ ELEMENT_TIMEOUT = int(os.getenv("ELEMENT_TIMEOUT", 20))
 SCHEDULE_TIME   = os.getenv("SCHEDULE_TIME", "01:00")
 NUM_THREADS     = int(os.getenv("NUM_THREADS", 3))
 
-# Directorios auxiliares
-# OUTPUT_DIR: carpeta donde caerá el PDF
-OUTPUT_DIR   = os.path.dirname(PDF_PATH) or "./output"
-# LOG_TXT_PATH: ruta al informe de texto paralelo al PDF
+# Log de texto para el reporte
 LOG_TXT_PATH = os.path.join(OUTPUT_DIR, "report.txt")
