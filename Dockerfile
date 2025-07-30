@@ -18,6 +18,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# 7) COPIAR LA CARPETA output
+COPY output/ ./output
+
 # 7) COPIAR LA CARPETA data CON TU XLSM
 COPY data/ ./data
 
